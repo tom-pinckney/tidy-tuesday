@@ -1,0 +1,100 @@
+---
+title: "UFO_sightings"
+author: "Tom Pinckney"
+date: "June 25, 2019"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## UFO Sightings
+
+```{r}
+library(tidyverse)
+library(rayshader)
+library(sf)
+
+ufo_sightings <- readr::read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-06-25/ufo_sightings.csv")
+
+head(ufo_sightings)
+```
+
+```{r}
+# UFO sightings country and shape
+ufo_sightings %>% 
+  gather(key, value, country, ufo_shape) %>% 
+  count(key, value) %>% 
+  mutate(value = fct_reorder(value, n)) %>% 
+  ggplot(aes(value, n)) +
+  geom_col() +
+  facet_wrap(~key, scales = 'free') +
+  coord_flip()
+```
+
+chloropleth map of UFO sightings by county
+
+* Need county shape object
+* Determine which county points fall in
+
+```{r}
+# get county shape object
+county <- map_data('county')
+
+county %>% 
+  ggplot(aes(long, lat, group = group)) +
+  geom_polygon(color = 'black', fill = NA) +
+  coord_map() +
+  theme_void()
+
+
+# Convert to SF object
+county_poly <- county %>% 
+  nest(long, lat, order, .key = "points") %>% 
+  mutate(polygon = map(points, ~.x%>% 
+                         select(long, lat) %>% 
+                         as.matrix() %>% 
+                         st_multipoint() %>% 
+                         st_cast("POLYGON"))) %>% 
+  select(-points) %>% 
+  st_as_sf(sf_column_name = "polygon",
+           crs = 4326)
+  
+# Convert UFO sightings in US to points object
+ufo_points <- ufo_sightings %>% 
+  filter((country == 'us') & (latitude < 50) & (latitude > 25)) %>%
+  st_as_sf(coords = c('longitude', 'latitude'), crs = 4326)
+
+
+# Find points in counties
+sightings_in_county <- st_join(county_poly, ufo_points, join = st_intersects) %>% 
+  as_tibble() %>% 
+  count(subregion, name = "UFO_sightings")
+
+# Join  back to county polygons
+ufo_sightings_county <- county_poly %>% 
+  left_join(sightings_in_county, by = 'subregion') %>% 
+  mutate(group = as.factor(ntile(UFO_sightings, 9)))
+```
+
+```{r}
+library(viridis)
+# Plot the data
+# Simple chloropleth
+chloropleth <- ufo_sightings_county %>% 
+  ggplot() +
+  geom_sf(aes(fill=group, color=group),size=0.3, color = 'grey') +
+  scale_fill_viridis_d() +
+  theme(rect = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank()) +
+  labs()
+
+
+plot_gg(chloropleth, multicore = TRUE, width = 6 ,height=2.7, fov = 70, scale = 150)
+render_depth(focallength=100,focus=0.72)
+```
+

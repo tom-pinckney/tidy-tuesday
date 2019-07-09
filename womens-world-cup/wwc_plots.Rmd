@@ -1,0 +1,63 @@
+---
+title: "Womens-world-cup"
+author: "Tom Pinckney"
+date: "July 9, 2019"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+```
+
+Get the data
+```{r}
+library(tidyverse)
+
+wwc_outcomes <- readr::read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-07-09/wwc_outcomes.csv")
+squads <- readr::read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-07-09/squads.csv")
+codes <- readr::read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-07-09/codes.csv")
+```
+
+
+Most experienced teams
+```{r}
+# Some players have NA by caps and goals, lets assume these are players with no experience
+apply(squads, 2, function(x) sum(is.na(x)))
+
+
+team_experience <- squads %>% 
+  replace_na(list(caps = 0, goals = 0)) %>% 
+  filter(pos != "GK") %>% 
+  group_by(country) %>% 
+    summarise("Average Caps (Per Player)" = mean(caps),
+              "Average Goals (Per Player)" = mean(goals),
+              "Average Age (Per Player)" = mean(age),
+              "Goals Scored (Per Player Cap)" = sum(goals) / sum(caps)) %>% 
+  gather(metric, value, `Average Caps (Per Player)`:`Goals Scored (Per Player Cap)`) %>% 
+  mutate(country_order = tidytext::reorder_within(country, value, metric),
+         country_color = if_else(country %in% c("US", "England", "Netherlands", "Sweden"), country, 'not_top_four'),
+         alpha = if_else(country %in% c("US", "England", "Netherlands", "Sweden"), 1, 0.95),
+         metric = factor(metric, levels = c("Average Age (Per Player)",
+                                            "Average Caps (Per Player)",
+                                            "Average Goals (Per Player)",
+                                            "Goals Scored (Per Player Cap)"
+                                            )))
+
+
+team_experience %>% 
+  ggplot(aes(country_order, value, fill = country_color, alpha = alpha)) +
+  geom_col(show.legend = FALSE) +
+  scale_x_reordered() +
+  scale_fill_viridis_d() +
+  facet_wrap(~metric, scales = 'free', nrow = 3) +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "US players are the most experienced, but do not score the most goals per player cap",
+       subtitle = "Based on international careers of WWC 2019 rosters",
+       caption = "Final four WWC 2019 teams in color",
+       x = "",
+       y = "")
+```
+
