@@ -63,7 +63,6 @@ ggdraw(p) +
   draw_plot(p2, 0.45, 0.35, 0.5, 0.5)
 ```
 
-Average activity seems to go down over time
 
 
 
