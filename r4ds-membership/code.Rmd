@@ -1,0 +1,69 @@
+---
+title: "r4ds-membership"
+author: "Tom Pinckney"
+date: "July 16, 2019"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+
+library(tidyverse)
+library(cowplot)
+library(scales)
+
+# Get the data
+r4ds_members <- readr::read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-07-16/r4ds_members.csv")
+
+# Create new columns
+r4ds_members_new_cols <- r4ds_members %>% 
+  mutate(total_messages = messages_in_public_channels + messages_in_private_channels + messages_in_shared_channels + messages_in_d_ms)
+
+# Members over time
+r4ds_members_new_cols %>% 
+  select(date, total_membership, messages_posted, messages_in_public_channels, total_messages, daily_members_posting_messages, weekly_members_posting_messages) %>%
+  gather(variable, value, 2:ncol(.)) %>% 
+  ggplot(aes(date, value)) +
+  geom_line() +
+  facet_wrap(~variable, scales = 'free') +
+  theme_half_open()
+    
+
+# Percent active over time
+percent_active <- r4ds_members %>% 
+  mutate(percent_active = weekly_active_members / total_membership) %>% 
+  select(date, percent_active, daily_active_members, total_membership)
+
+
+p <- percent_active %>% 
+  ggplot(aes(date, percent_active)) +
+  geom_line(size = 1.2) +
+  theme_cowplot() +
+  scale_x_date(date_breaks = '3 months',
+               date_labels =  "%b %Y") +
+  scale_y_continuous(labels = percent_format(1)) +
+  labs(y = "Percent Weekly Active Users",
+       x = "",
+       title = 'Adding users is easier than finding contributers',
+       subtitle = 'As R4DS slack membership grows, percent of active users drops')
+
+p2 <- percent_active %>% 
+  ggplot(aes(date, total_membership)) +
+  geom_line(size = 1.2) +
+  theme_minimal_grid() +
+  #theme(panel.background = element_rect(fill = 'grey90'),
+  #      plot.background = element_rect(fill = 'grey90')) +
+  labs(y = 'Total Membership',
+       x = '') +
+    scale_x_date(date_breaks = '6 months',
+                 date_labels =  "%b %Y")
+
+ggdraw(p) +
+  draw_plot(p2, 0.45, 0.35, 0.5, 0.5)
+```
+
+Average activity seems to go down over time
+
+
+
