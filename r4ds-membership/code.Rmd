@@ -46,7 +46,8 @@ p <- percent_active %>%
   labs(y = "Percent Weekly Active Users",
        x = "",
        title = 'Adding users is easier than finding contributers',
-       subtitle = 'As R4DS slack membership grows, percent of active users drops')
+       subtitle = 'As R4DS slack membership grows, percent of active users drops',
+       caption = 'Dara from R4DS slack channel')
 
 p2 <- percent_active %>% 
   ggplot(aes(date, total_membership)) +
