@@ -1,0 +1,207 @@
+---
+title: "wildlife-strikes"
+author: "Tom Pinckney"
+date: "July 16, 2019"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+knitr::opts_chunk$set(message = FALSE)
+
+library(tidyverse)
+
+wildlife_impacts <- readr::read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-07-23/wildlife_impacts.csv")
+
+# Clean data
+wildlife_impacts_clean <- wildlife_impacts %>% 
+  mutate_if(is.character, str_to_lower) %>% 
+  mutate(year = lubridate::year(incident_date),
+         month = lubridate::month(incident_date))
+
+# explore
+
+character_counts <- wildlife_impacts_clean %>% 
+  select_if(is.character) %>% 
+  select(-airport_id, -species_id, -time_of_day) %>% 
+  gather(column, values, 1:ncol(.)) %>% 
+  count(column, values) %>% 
+  mutate(values = tidytext::reorder_within(values, n, column)) 
+
+
+character_counts %>% 
+  count(column) %>% 
+  arrange(desc(n))
+```
+
+```{r, plot 1}
+ 
+# Few categories
+character_counts %>% 
+  filter(column %in% c("precip", "damage", "type_eng", "operator", "sky")) %>% 
+  ggplot(aes(values, n)) +
+  geom_col() +
+  facet_wrap(~column, scales = 'free') +
+  tidytext::scale_x_reordered() +
+  coord_flip()
+  
+```
+
+
+```{r}
+character_counts %>% 
+  filter(column %in% c("state", "phase_of_flt", "atype")) %>% 
+  group_by(column) %>% 
+  arrange(desc(n)) %>% 
+  top_n(15) %>% 
+  ggplot(aes(values, n)) +
+  geom_col() +
+  facet_wrap(~column, scales = 'free') +
+  tidytext::scale_x_reordered() +
+  coord_flip()
+  
+```
+```{r}
+
+character_counts %>% 
+  filter(column %in% c("airport", "species")) %>% 
+  group_by(column) %>% 
+  arrange(desc(n)) %>% 
+  top_n(10) %>% 
+  ggplot(aes(values, n)) +
+  geom_col() +
+  facet_wrap(~column, scales = 'free') +
+  tidytext::scale_x_reordered() +
+  coord_flip()
+  
+```
+
+Collisions over time
+```{r}
+
+wildlife_impacts_clean %>% 
+  count(year, phase_of_flt, operator) %>% 
+  ggplot(aes(year, n, group = phase_of_flt, color = phase_of_flt)) +
+  geom_line() +
+  geom_text(aes(label = phase_of_flt)) +
+  facet_wrap(~operator)
+
+```
+
+
+Downloaded number of flights data from https://www.transtats.bts.gov/Data_Elements.aspx?Data=2
+```{r}
+# Read in number of flights data and join
+files <- list.files(pattern = "[v$]")
+
+monthly_flights <- tibble()
+for(file in files){
+  
+ airline <- read_csv(here::here('wildlife-strikes', files[1]), skip = 1) %>%
+   janitor::clean_names() %>%
+   filter(month != "TOTAL") %>% 
+   mutate(operator = str_extract(file, "[a-z]+(?=.)"),
+          year = as.numeric(year),
+          month = as.numeric(month))
+ 
+ monthly_flights <- rbind(airline, monthly_flights)
+  
+}
+
+
+# Yearly domestic flights
+yearly_flights <- monthly_flights %>% 
+  group_by(operator, year) %>% 
+  summarise(domestic = sum(domestic)) %>% 
+  mutate(year = as.numeric(year))
+
+
+yearly_flights %>% 
+  ggplot(aes(year, domestic)) +
+  geom_line() +
+  facet_wrap(~operator)
+```
+
+# Monthly collisions per flight
+```{r}
+monthly_collisions <- wildlife_impacts_clean %>% 
+  count(operator, year, month, name = "collisions") %>% 
+  mutate(operator = word(operator, 1, 1))
+
+collisions_per_flight_monthly <- monthly_flights %>% 
+    inner_join(monthly_collisions) %>% 
+    mutate(collision_flight = collisions / domestic,
+           operator = str_to_title(operator),
+           collisions_per_10000 = collision_flight * 10000)
+
+
+fct_levels <- c("American", "Southwest", "United", "Delta")
+colors <- c("#C30019", "#F9B612", "#005DAA", "003268")
+
+
+collisions_per_flight_yearly <- collisions_per_flight_monthly %>%
+  group_by(year, operator) %>% 
+  summarise(domestic = sum(domestic),
+            collisions = sum(collisions)) %>% 
+  mutate(collisions_flight = collisions / domestic,
+         out_of = round(1 / collisions_flight),
+         operator = factor(operator, levels = fct_levels),
+         collisions_per_10000 = collisions_flight * 10000)
+
+labels <- collisions_per_flight_yearly %>% 
+  group_by(operator) %>% 
+  filter(year == max(year)) %>% 
+  ungroup()
+
+y_values <- seq(0.0005, 0.0025, 0.0005)
+y_labels <- round(1 / y_values)
+
+point_annotations <- tibble(x = c(2007, 2013),
+                            y = c(7.5, 11.5))
+
+line_conenctors <- tibble(x = c(2007, 2012),
+                          xend = c(2007, 2013),
+                          y = c(8.5, 13.5),
+                          yend = c(7.5, 11.5))
+
+p <- collisions_per_flight_yearly %>% 
+    ggplot(aes(year, collisions_per_10000, group = operator, color = operator)) +
+    geom_segment(data = line_conenctors, aes(x = x, xend = xend, y = y, yend = yend, group = NULL, color = NULL), size = 1.2, alpha = 0.7, show.legend = FALSE) +
+    geom_point(data = labels, size = 4, show.legend = FALSE, color = "grey", alpha = 0.5) +
+    geom_line(size = 0.8, show.legend = FALSE, linetype = 2, alpha = 0.5) +
+    geom_point(data = labels, size = 2, show.legend = FALSE) +
+    geom_smooth(aes(year, collisions_per_10000, group = NULL, color = NULL), show.legend = FALSE, se = FALSE, span = 1.2,
+                size = 2, linetype = 1, color = "grey") +
+    geom_point(data = point_annotations, aes(x = x, y = y, group = NULL, color = NULL), size = 3, alpha = 0.7, show.legend = FALSE) +
+    ggrepel::geom_text_repel(data = labels, aes(label = operator, hjust = -0.1), 
+                             show.legend = FALSE, direction = 'y') +
+    cowplot::theme_half_open() +
+    expand_limits(x = 2021) +
+    labs(y = "Collisions per 10000 flights",
+         x = NULL,
+         title = "Why are planes colliding with more birds?",
+         subtitle = "Bird collisions nearly doubled from 2007 - 2013 across the four major airlines",
+         caption = "Source FAA wildlife strike database and BTS website") +
+    scale_color_manual(values = colors) +
+    coord_cartesian(expand = FALSE) +
+    annotate(geom = "text", label = "2007, 7 out of\nevery 10k flights\nstrikes a bird", x = 2007, y = 10.2, size = 3) +
+    annotate(geom = "text", label = "2013, 12 out of\nevery 10k flights\nstrikes a bird", x = 2012, y = 15.2, size = 3)
+
+p
+```
+
+```{r}
+library(cowplot)
+library(magick)
+
+img <- image_read(here::here('wildlife-strikes', 'sky2.png')) %>%
+  image_resize("570X380") %>% 
+  image_crop("520x380") %>%
+  image_colorize(35, "white")
+
+ggdraw() + 
+  draw_image(img) + 
+  draw_plot(p)
+```
+
